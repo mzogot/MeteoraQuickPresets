@@ -55,7 +55,7 @@ The extension isn't on the Chrome Web Store, so you load it yourself. It works i
 1. Download the `.zip` from the [latest release](https://github.com/mzogot/MeteoraQuickPresets/releases/latest) and unzip it somewhere you'll keep it.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and choose the unzipped folder.
-4. Open a pool on [app.meteora.ag](https://app.meteora.ag). The bar appears above the Create Position panel.
+4. Open a pool on [app.meteora.ag](https://app.meteora.ag/ref/MICHAELZOGOT). The bar appears above the Create Position panel.
 
 To update, replace the folder with the new version and click the reload icon on the extension's card.
 
