@@ -1,0 +1,46 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never post a seed phrase or private key. Nobody working on this project will ask for one.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Include the message shown in the bar.
+    validations:
+      required: true
+  - type: textarea
+    id: preset
+    attributes:
+      label: Preset settings
+      placeholder: "2 SOL, Bid Ask, Min -74%, Auto-Fill off"
+    validations:
+      required: true
+  - type: input
+    id: pool
+    attributes:
+      label: Pool link
+      placeholder: "https://app.meteora.ag/dlmm/..."
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      description: Shown on chrome://extensions
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+      placeholder: "Chrome 142"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else
+      description: Please crop out wallet addresses and balances you'd rather keep private.
