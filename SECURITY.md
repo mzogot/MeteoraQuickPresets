@@ -15,7 +15,7 @@ Please report anything that makes it possible for the extension to:
 - Submit the Create Position form or trigger a wallet signature.
 - Read wallet keys, seed phrases or balances.
 - Send data anywhere, or load code from a remote source.
-- Run on any site other than `https://app.meteora.ag`.
+- Run on any site other than `https://app.meteora.ag`, `https://www.meteora.ag`, `https://meteora.ag` or `https://edge.meteora.ag`.
 - Report a preset as ready when the panel holds a different amount, strategy, Auto-Fill setting or price range.
 
 The real-SOL check reads the token logo Meteora shows, because the extension makes no network requests. A fake
@@ -33,4 +33,5 @@ shasum -a 256 -c meteora-quick-presets-*.zip.sha256
 ```
 
 It should print `OK`. You can also read the loaded extension's `manifest.json`. It should list `storage`
-as its only permission and `https://app.meteora.ag/*` as its only site.
+as its only permission, and only these four sites: `https://app.meteora.ag/*`, `https://www.meteora.ag/*`,
+`https://meteora.ag/*` and `https://edge.meteora.ag/*`.

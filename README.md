@@ -80,7 +80,7 @@ The bar reads Meteora's page directly, so a Meteora redesign can break it. When 
 | | |
 | --- | --- |
 | **Permissions** | `storage`, to save your presets in your browser. |
-| **Runs on** | `https://app.meteora.ag/*` only. |
+| **Runs on** | Meteora's app only: `app.meteora.ag`, `www.meteora.ag`, `meteora.ag` and `edge.meteora.ag`. |
 | **Sends data** | Nothing. There are no network requests, analytics or accounts. |
 | **Wallet access** | None. It never reads your keys or balances and never signs anything. |
 | **Stored data** | Your presets, in Chrome's local extension storage. Removing the extension deletes them. |

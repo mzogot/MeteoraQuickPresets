@@ -11,7 +11,12 @@
   "permissions": ["storage"],
   "content_scripts": [
     {
-      "matches": ["https://app.meteora.ag/*"],
+      "matches": [
+        "https://app.meteora.ag/*",
+        "https://www.meteora.ag/*",
+        "https://meteora.ag/*",
+        "https://edge.meteora.ag/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

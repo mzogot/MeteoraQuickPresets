@@ -2,6 +2,12 @@
 
 Notable changes to Meteora Quick Presets. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-09
+
+### Added
+
+- Quick Presets now works on every Meteora app address: `www.meteora.ag`, `meteora.ag` and `edge.meteora.ag`, as well as `app.meteora.ag`. Your presets are shared across all of them.
+
 ## [0.1.1] - 2026-11-09
 
 ### Fixed
