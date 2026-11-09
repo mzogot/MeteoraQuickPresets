@@ -1,0 +1,83 @@
+name: Release
+
+# Publishes a GitHub release whenever main has a version in package.json that
+# has not been released yet. A push that doesn't change the version does nothing.
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check whether this version is already released
+        id: version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released. Nothing to do."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.version.outputs.released == 'false'
+        with:
+          node-version: 26
+          package-manager-cache: false
+
+      - name: Install, check and build
+        if: steps.version.outputs.released == 'false'
+        run: |
+          npm ci --ignore-scripts
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Package the extension and write release notes
+        if: steps.version.outputs.released == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          zip_name="meteora-quick-presets-$VERSION.zip"
+          (cd dist && zip -r "../$zip_name" .)
+          sha256sum "$zip_name" > "$zip_name.sha256"
+          {
+            awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { found = 1; next } /^## \[/ { found = 0 } found' CHANGELOG.md
+            echo "### Install"
+            echo
+            echo "Download \`$zip_name\`, unzip it, open \`chrome://extensions\`, turn on Developer mode and click **Load unpacked**. Then choose the unzipped folder."
+            echo
+            echo "Only install from this repository. To check your download, see the [security policy](https://github.com/$GITHUB_REPOSITORY/blob/main/SECURITY.md)."
+          } > release-notes.md
+
+      - name: Publish the release
+        if: steps.version.outputs.released == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          zip_name="meteora-quick-presets-$VERSION.zip"
+          gh release create "v$VERSION" "$zip_name" "$zip_name.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Meteora Quick Presets $VERSION" \
+            --notes-file release-notes.md

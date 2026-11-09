@@ -15,3 +15,7 @@ Internal changes with no effect on users (refactors, tests, tooling) need neithe
 - `package.json` is the only place the version is set. `build.mjs` writes it into `dist/manifest.json`, so don't add a `version` to the root `manifest.json`.
 - Add the new entry at the top of `CHANGELOG.md` as `## [x.y.z] - YYYY-MM-DD`, with `### Added`, `### Changed` or `### Fixed` sections written for users.
 - The build fails if the current version has no changelog entry.
+
+## Releases
+
+Pushing a new `package.json` version to `main` publishes it. `.github/workflows/release.yml` runs the checks, builds the zip and checksum, and creates the `vX.Y.Z` GitHub release with that version's changelog entry as its notes. Don't create releases by hand, and test on a real Meteora pool before pushing a version bump.
