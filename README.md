@@ -4,7 +4,7 @@
 
 # Meteora Quick Presets
 
-**One-click presets for Meteora's DLMM Create Position panel.** Pick a preset and the SOL amount, strategy and price range are filled in for you. You still review and confirm every position yourself.
+**One-click presets for Meteora's DLMM Create Position panel.** Pick a preset and the amount, strategy and price range are filled in for you, on the SOL side or the token side. You still review and confirm every position yourself.
 
 [![Latest release](https://img.shields.io/github/v/release/mzogot/MeteoraQuickPresets?label=release&color=f5a24b)](https://github.com/mzogot/MeteoraQuickPresets/releases/latest)
 ![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-black?logo=googlechrome&logoColor=white)
@@ -27,14 +27,15 @@
 Opening a DLMM position means setting the same few fields every time: amount, Auto-Fill, strategy, Min price. If you use the same setups across many pools, that is a lot of repeated typing, and each pool's bin step changes how many bins a given percentage covers.
 
 - **One click per setup.** Save the positions you open most and apply them from a bar above the panel.
-- **Range by percent or by bins.** Set a Min %, or ask for a total bin count and the extension works out the Min price from the pool's bin step.
+- **SOL or token side.** Deposit a fixed SOL amount, or a percentage of your token balance, so one preset works whatever you hold.
+- **Range by percent or by bins.** Set a Min % (Max % on the token side), or ask for a total bin count and the extension works out the price from the pool's bin step.
 - **It never submits.** The extension only fills in the form. Creating the position is still your click, and your wallet still asks you to sign.
 - **No wallet access and no network access.** It has no code that talks to a wallet or a server.
 - **Free and open source** under the MIT license.
 
 ## Features
 
-<img src="docs/images/editor.png" width="620" alt="The preset editor with fields for name, SOL amount, strategy, range type, Min %, a Keep Auto-Fill on checkbox, and Save, Cancel and Delete buttons">
+<img src="docs/images/editor.png" width="620" alt="The preset editor with the Token side selected, showing fields for name, percent of token balance with 25%, 50% and 100% shortcuts, strategy, range type, Max %, and Save, Cancel and Delete buttons">
 
 Each preset stores:
 
@@ -71,6 +72,7 @@ A preset only runs when:
 
 - The pool is paired with real SOL as the second token. Tokens that are only named SOL are refused.
 - The panel shows the price as SOL/TOKEN. If it's flipped, click the price to switch it back.
+- For a token-side preset, your connected wallet holds some of that token.
 
 Before showing **Ready**, the extension reads the panel back and checks the amount, strategy, Auto-Fill and price range. If a preset stops early, the bar tells you the panel may be only partly filled.
 
