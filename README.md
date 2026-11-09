@@ -15,7 +15,7 @@
 
 <br>
 
-<img src="docs/images/bar.png" width="620" alt="The Quick Presets bar with three preset buttons and a green message reading: Ready, -74.02% to 0%, 205 bins. Review, then create.">
+<img src="docs/images/bar.png" width="620" alt="The Quick Presets bar with four preset buttons and a green message reading: Ready, -74.02% to 0%, 205 bins. Review, then create.">
 
 </div>
 
