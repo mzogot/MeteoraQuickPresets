@@ -2,6 +2,14 @@
 
 Notable changes to Meteora Quick Presets. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-09
+
+### Added
+
+- Ratio presets. A new Ratio tab in the preset editor opens a position holding both tokens at a split you choose by value, such as 50/50, 60/40 or 80/20. Enter the total position in SOL and the SOL share, and the extension works out the token amount from the current pool price.
+- Ratio presets set the range by Min % and Max %, or by total bins shared out using the same ratio.
+- A ratio preset stops before changing the panel if your wallet can't cover either amount, and asks you to run it again if the price moves about 1% or more while it fills.
+
 ## [0.3.0] - 2026-11-09
 
 ### Added

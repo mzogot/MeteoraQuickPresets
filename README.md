@@ -42,11 +42,13 @@ Each preset stores:
 | Setting | Options |
 | --- | --- |
 | **Name** | Optional, up to 40 characters. Without one, the button shows the preset's settings. |
-| **Side** | SOL, or Token for a single-sided token position. |
-| **Amount** | SOL side: any amount above 0. Token side: a percentage of your token balance, from the 25%, 50% and 100% shortcuts or any value you type. |
+| **Side** | SOL, Token for a single-sided token position, or Ratio for both tokens at a split you choose. |
+| **Amount** | SOL side: any amount above 0. Token side: a percentage of your token balance, from the 25%, 50% and 100% shortcuts or any value you type. Ratio: the total position in SOL, plus the SOL share from the 50/50, 60/40, 70/30 and 80/20 shortcuts or any whole number from 1 to 99. |
 | **Strategy** | Spot, Curve or Bid Ask. |
-| **Range** | SOL side: Min % (between -99.99 and 0) or total bins (2 or more). Token side: Max % (above 0) or total bins, starting at the current price. |
-| **Auto-Fill** | SOL side only. Off for a single-sided SOL position, on to let Meteora balance both tokens. Always off on the Token side. |
+| **Range** | SOL side: Min % (between -99.99 and 0) or total bins (2 or more). Token side: Max % (above 0) or total bins, starting at the current price. Ratio: Min % and Max %, or total bins (3 or more) shared out by the ratio. |
+| **Auto-Fill** | SOL side only. Off for a single-sided SOL position, on to let Meteora balance both tokens. Always off on the Token and Ratio sides. |
+
+A Ratio preset splits by value at the current pool price, so 1 SOL at 80/20 deposits 0.8 SOL plus 0.2 SOL worth of the token. Your wallet needs both. Meteora's position rent is on top of the total.
 
 The bar shows each step as it runs and tells you what stopped it if something goes wrong. If you click or type in the panel, or the page changes, a running preset stops straight away. Presets stay in sync across open Meteora tabs.
 

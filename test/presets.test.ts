@@ -2,17 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   deriveBinStepBps,
+  exceedsBalance,
   findMismatch,
   isSolLogo,
   maxPctForBins,
   minPctForBins,
   parseBalance,
   parseNumber,
+  parsePrice,
   presetDetails,
   presetLabel,
+  ratioAmounts,
+  ratioRangeForBins,
+  splitBins,
   tokenAmountFor,
   validatePreset,
   type Preset,
+  type RatioPreset,
   type TokenPreset,
 } from '../src/presets.ts';
 
@@ -156,6 +162,97 @@ test('computes Max % for a bin count, a quarter-bin above the edge', () => {
   const max = maxPctForBins(0, 70, 100);
   const edge = (Math.pow(1.01, 69) - 1) * 100;
   assert.ok(max > edge && max - edge < 0.5);
+});
+
+const ratioPreset: RatioPreset = {
+  id: 'c',
+  side: 'ratio',
+  totalSol: 1,
+  solPct: 80,
+  strategy: 'Spot',
+  autoFill: false,
+  range: { mode: 'minMax', minPct: -15, maxPct: 18 },
+};
+
+test('builds the label for ratio presets', () => {
+  assert.equal(presetLabel(ratioPreset), '1 SOL 80/20 | Spot | -15% to +18%');
+  assert.equal(
+    presetDetails({ ...ratioPreset, solPct: 50, range: { mode: 'bins', bins: 69 } }),
+    '1 SOL 50/50 | Spot | 69 bins',
+  );
+});
+
+test('validates ratio presets', () => {
+  assert.equal(validatePreset(ratioPreset), null);
+  assert.equal(validatePreset({ ...ratioPreset, solPct: 1 }), null);
+  assert.equal(validatePreset({ ...ratioPreset, solPct: 99 }), null);
+  assert.equal(validatePreset({ ...ratioPreset, range: { mode: 'bins', bins: 3 } }), null);
+  assert.match(validatePreset({ ...ratioPreset, totalSol: 0 })!, /Total position/);
+  assert.match(validatePreset({ ...ratioPreset, solPct: 0 })!, /SOL share/);
+  assert.match(validatePreset({ ...ratioPreset, solPct: 100 })!, /SOL share/);
+  assert.match(validatePreset({ ...ratioPreset, solPct: 62.5 })!, /SOL share/);
+  assert.match(validatePreset({ ...ratioPreset, solPct: Number.NaN })!, /SOL share/);
+  assert.match(validatePreset({ ...ratioPreset, range: { mode: 'minMax', minPct: 5, maxPct: 18 } })!, /Min %/);
+  assert.match(validatePreset({ ...ratioPreset, range: { mode: 'minMax', minPct: -15, maxPct: 0 } })!, /Max %/);
+  assert.match(
+    validatePreset({ ...ratioPreset, range: { mode: 'minMax', minPct: -15, maxPct: Number.NaN } })!,
+    /Max %/,
+  );
+  assert.match(validatePreset({ ...ratioPreset, range: { mode: 'bins', bins: 2 } })!, /at least 3/);
+});
+
+test('parses pool prices, including subscript zeros seen on live pools', () => {
+  assert.equal(parsePrice('0.0₄17080226'), 0.000017080226);
+  assert.equal(parsePrice('0.0₁₂5'), 0.0000000000005);
+  assert.equal(parsePrice('0.5123'), 0.5123);
+  assert.equal(parsePrice('1,250.5'), 1250.5);
+  assert.ok(Number.isNaN(parsePrice('')));
+  assert.ok(Number.isNaN(parsePrice('n/a')));
+});
+
+test('splits a position by value', () => {
+  assert.deepEqual(ratioAmounts(1, 50, 0.5), { sol: 0.5, token: 1 });
+  assert.deepEqual(ratioAmounts(1, 80, 0.00002), { sol: 0.8, token: 10_000 });
+  assert.equal(ratioAmounts(0.3, 70, 1).sol, 0.21);
+  assert.ok(Number.isNaN(ratioAmounts(1, 80, Number.NaN).token));
+});
+
+test('only treats a balance as short when it clearly is', () => {
+  assert.equal(exceedsBalance(1, 2), false);
+  assert.equal(exceedsBalance(4_950_000, 4_940_000), false);
+  assert.equal(exceedsBalance(2, 1), true);
+});
+
+test('shares bins by the ratio and keeps one on each side', () => {
+  assert.deepEqual(splitBins(69, 50), { below: 34, above: 34 });
+  assert.deepEqual(splitBins(101, 80), { below: 80, above: 20 });
+  assert.deepEqual(splitBins(3, 99), { below: 1, above: 1 });
+  assert.deepEqual(splitBins(50, 1), { below: 1, above: 48 });
+});
+
+test('aims the ratio range a quarter-bin inside each edge', () => {
+  const { minPct, maxPct } = ratioRangeForBins(101, 80, 100);
+  const minEdge = (Math.pow(1.01, -80) - 1) * 100;
+  const maxEdge = (Math.pow(1.01, 20) - 1) * 100;
+  assert.ok(minPct > minEdge && minPct - minEdge < 0.25);
+  assert.ok(maxPct > maxEdge && maxPct - maxEdge < 0.5);
+});
+
+test('checks a ratio panel against the current price', () => {
+  const state = {
+    sol: 0.8,
+    strategySelected: true,
+    autoFillOn: false,
+    tokenAmount: 10_000,
+    tokenBalance: 50_000,
+    poolPrice: 0.00002,
+  };
+  assert.equal(findMismatch(ratioPreset, state), null);
+  assert.equal(findMismatch(ratioPreset, { ...state, poolPrice: 0.0000201 }), null);
+  assert.match(findMismatch(ratioPreset, { ...state, poolPrice: 0.000021 })!, /80\/20/);
+  assert.match(findMismatch(ratioPreset, { ...state, poolPrice: undefined })!, /80\/20/);
+  assert.match(findMismatch(ratioPreset, { ...state, sol: 0.5 })!, /SOL amount/);
+  assert.match(findMismatch(ratioPreset, { ...state, autoFillOn: true })!, /Auto-Fill/);
 });
 
 test('validates presets', () => {

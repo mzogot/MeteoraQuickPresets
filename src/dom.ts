@@ -1,4 +1,4 @@
-import { parseNumber, type Strategy } from './presets';
+import { parseNumber, parsePrice, type Strategy } from './presets';
 
 /** A failure with a message written to be shown to the user. */
 export class PresetError extends Error {}
@@ -131,6 +131,16 @@ export function readPanel(form: HTMLFormElement): Panel {
     minInput: findPriceInput(form, 'Min Price'),
     maxInput: findPriceInput(form, 'Max Price'),
     pairLabel: swapIcon?.closest('button')?.innerText.trim() ?? '',
+  };
+}
+
+/** The pool's live price. It sits outside the Create Position form. */
+export function readPoolPrice(): { value: number; pair: string } {
+  const block = [...document.querySelectorAll(component('PoolPrice'))].find(isVisible);
+  const button = requireElement(block?.querySelector('button'), 'the current pool price');
+  return {
+    value: parsePrice(button.querySelector('span')?.textContent ?? ''),
+    pair: button.querySelector('span[title]')?.getAttribute('title') ?? '',
   };
 }
 

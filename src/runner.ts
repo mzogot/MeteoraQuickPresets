@@ -3,15 +3,18 @@ import {
   isAutoFillOn,
   isStrategySelected,
   readPanel,
+  readPoolPrice,
   readRange,
   type Panel,
   type RangeSnapshot,
+  type TokenField,
 } from './dom';
 import { typeAndCommit, waitFor, waitForQuiet } from './input';
 import {
   MIN_PCT_LIMIT,
   amountMatches,
   deriveBinStepBps,
+  exceedsBalance,
   findMismatch,
   isSolLogo,
   maxPctForBins,
@@ -19,8 +22,13 @@ import {
   oneBinPct,
   parseBalance,
   parseNumber,
+  ratioAmounts,
+  ratioLabel,
+  ratioRangeForBins,
   tokenAmountFor,
   type Preset,
+  type RatioAmounts,
+  type RatioPreset,
   type SolPreset,
   type TokenPreset,
 } from './presets';
@@ -41,8 +49,9 @@ const rangeNotReady = (range: RangeSnapshot) =>
 const describeRange = (now: RangeSnapshot) =>
   `${now.minPct}% to ${now.maxPct}%, ${now.bins ?? '?'} bins`;
 
-const readTokenBalance = (current: Panel) =>
-  parseBalance(current.tokenX.balanceButton?.innerText ?? '');
+const readBalance = (field: TokenField) => parseBalance(field.balanceButton?.innerText ?? '');
+
+const readTokenBalance = (current: Panel) => readBalance(current.tokenX);
 
 /** Read-only, so a token preset with nothing to deposit never touches the panel. */
 function checkTokenBalance(current: Panel): void {
@@ -56,6 +65,40 @@ function checkTokenBalance(current: Panel): void {
   if (balance <= 0) {
     throw new PresetError(`This wallet has no ${current.tokenX.symbol} to deposit.`);
   }
+}
+
+function checkCanAfford(field: TokenField, needed: number): void {
+  const balance = readBalance(field);
+  if (Number.isNaN(balance)) {
+    throw new PresetError(`Couldn't read your ${field.symbol} balance. Check your wallet is connected.`);
+  }
+  if (exceedsBalance(needed, balance)) {
+    throw new PresetError(`This needs ${needed} ${field.symbol}, but your wallet has ${balance}.`);
+  }
+}
+
+/** Read-only, so a ratio the wallet can't cover never touches the panel. */
+function planRatioDeposit(preset: RatioPreset, current: Panel): RatioAmounts {
+  if (current.tokenX.input.disabled) {
+    throw new PresetError('The panel is locked right now. Try again in a moment.');
+  }
+  const price = readPoolPrice();
+  const expected = `SOL/${current.tokenX.symbol}`;
+  if (price.pair !== expected) {
+    throw new PresetError(
+      `The pool price is shown as ${price.pair}. Click it to switch back to ${expected}, then try again.`,
+    );
+  }
+  if (!Number.isFinite(price.value) || price.value <= 0) {
+    throw new PresetError("Couldn't read the current pool price.");
+  }
+  const amounts = ratioAmounts(preset.totalSol, preset.solPct, price.value);
+  if (amounts.sol <= 0 || amounts.token <= 0) {
+    throw new PresetError('That total position is too small to split.');
+  }
+  checkCanAfford(current.tokenY, amounts.sol);
+  checkCanAfford(current.tokenX, amounts.token);
+  return amounts;
 }
 
 function checkPool(panel: Panel): void {
@@ -105,11 +148,13 @@ export async function applyPreset(
   if (!loaded) throw new PresetError('The price range has not loaded yet.');
   checkPool(panel());
   if (preset.side === 'token') checkTokenBalance(panel());
+  const ratioDeposit = preset.side === 'ratio' ? planRatioDeposit(preset, panel()) : null;
 
   // Everything above only reads the panel. From here on, a failure can leave it part-filled.
   try {
     await setAutoFill(preset.autoFill, panel, signal, onStep);
     if (preset.side === 'token') await setTokenAmount(preset, panel, settle, signal, onStep);
+    else if (preset.side === 'ratio') await setRatioAmounts(ratioDeposit!, panel, settle, signal, onStep);
     else await setAmounts(preset, panel, settle, signal, onStep);
 
     onStep(`Selecting ${preset.strategy}…`);
@@ -119,7 +164,9 @@ export async function applyPreset(
     const summary =
       preset.side === 'token'
         ? await setTokenRange(preset, panel, range, settle, signal)
-        : await setRange(preset, panel, range, settle, signal);
+        : preset.side === 'ratio'
+          ? await setRatioRange(preset, panel, range, settle, signal)
+          : await setRange(preset, panel, range, settle, signal);
     verifyPanel(preset, panel());
     return summary;
   } catch (error) {
@@ -137,6 +184,8 @@ function verifyPanel(preset: Preset, current: Panel): void {
     autoFillOn: isAutoFillOn(current),
     tokenAmount: parseNumber(current.tokenX.input.value),
     tokenBalance: readTokenBalance(current),
+    // Read fresh, so a price that moved during the run fails the ratio check.
+    poolPrice: preset.side === 'ratio' ? readPoolPrice().value : undefined,
   });
   if (mismatch) throw new PresetError(mismatch);
 }
@@ -221,6 +270,36 @@ async function setAmounts(
   await settle();
 }
 
+async function setRatioAmounts(
+  amounts: RatioAmounts,
+  panel: () => Panel,
+  settle: () => Promise<void>,
+  signal: AbortSignal,
+  onStep: (message: string) => void,
+): Promise<void> {
+  onStep(`Entering ${amounts.sol} SOL and ${amounts.token} ${panel().tokenX.symbol}…`);
+  const solInput = () => panel().tokenY.input;
+  const tokenInput = () => panel().tokenX.input;
+
+  const solApplied = () => parseNumber(solInput().value) === amounts.sol;
+  if (!solApplied()) {
+    await typeAndCommit(solInput(), String(amounts.sol), signal);
+    if (!(await waitFor(solApplied, STATE_TIMEOUT_MS, signal))) {
+      throw new PresetError('The SOL amount did not apply.');
+    }
+    await settle();
+  }
+
+  const tokenApplied = () => amountMatches(parseNumber(tokenInput().value), amounts.token);
+  if (!tokenApplied()) {
+    await typeAndCommit(tokenInput(), String(amounts.token), signal);
+    if (!(await waitFor(tokenApplied, STATE_TIMEOUT_MS, signal))) {
+      throw new PresetError('The token amount did not apply.');
+    }
+  }
+  await settle();
+}
+
 async function setStrategy(
   preset: Preset,
   panel: () => Panel,
@@ -285,6 +364,70 @@ async function setTokenRange(
     }
     if (attempt >= MAX_RANGE_ATTEMPTS) {
       throw new PresetError(`Wanted Max ${target}% but got ${describeRange(now)}.`);
+    }
+  }
+}
+
+/** Runs after both amounts, because entering them makes Meteora reset the range. */
+async function setRatioRange(
+  preset: RatioPreset,
+  panel: () => Panel,
+  range: () => RangeSnapshot,
+  settle: () => Promise<void>,
+  signal: AbortSignal,
+): Promise<string> {
+  const start = range();
+  const binStep = deriveBinStepBps(start.minPct, start.maxPct, start.bins);
+  const spec = preset.range;
+  if (spec.mode === 'bins' && binStep === null) {
+    throw new PresetError("Couldn't work out this pool's bin step from the panel.");
+  }
+
+  const toleranceAt = (pct: number) =>
+    binStep === null ? UNKNOWN_BIN_TOLERANCE_PCT : oneBinPct(pct, binStep) + ROUNDING_TOLERANCE_PCT;
+  const ready = (now: RangeSnapshot) => {
+    const { tokenX, tokenY } = panel();
+    const deposit = `${tokenY.input.value} SOL + ${tokenX.input.value} ${tokenX.symbol}`;
+    return `Ready: ${deposit} (${ratioLabel(preset.solPct)}), ${describeRange(now)}. Review, then create.`;
+  };
+
+  let target =
+    spec.mode === 'bins'
+      ? ratioRangeForBins(spec.bins, preset.solPct, binStep!)
+      : { minPct: spec.minPct, maxPct: spec.maxPct };
+
+  for (let attempt = 1; ; attempt++) {
+    if (target.minPct < MIN_PCT_LIMIT) {
+      throw new PresetError('That many bins would go past the lowest allowed Min price.');
+    }
+    await typeAndCommit(panel().minInput, target.minPct.toFixed(2), signal);
+    await settle();
+    await typeAndCommit(panel().maxInput, target.maxPct.toFixed(2), signal);
+    await settle();
+
+    const now = range();
+    if (spec.mode === 'bins') {
+      if (now.bins === spec.bins && now.minPct < 0 && now.maxPct > 0) return ready(now);
+      if (attempt >= MAX_RANGE_ATTEMPTS || now.bins === null) {
+        throw new PresetError(`Wanted ${spec.bins} bins around the price but got ${describeRange(now)}.`);
+      }
+      target = {
+        ...target,
+        maxPct: target.maxPct - (now.bins - spec.bins) * oneBinPct(target.maxPct, binStep!),
+      };
+      continue;
+    }
+
+    if (
+      Math.abs(now.minPct - target.minPct) <= toleranceAt(target.minPct) &&
+      Math.abs(now.maxPct - target.maxPct) <= toleranceAt(target.maxPct)
+    ) {
+      return ready(now);
+    }
+    if (attempt >= MAX_RANGE_ATTEMPTS) {
+      throw new PresetError(
+        `Wanted ${target.minPct}% to ${target.maxPct}% but got ${describeRange(now)}.`,
+      );
     }
   }
 }

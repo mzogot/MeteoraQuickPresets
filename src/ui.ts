@@ -1,9 +1,11 @@
 import {
   MAX_NAME_LENGTH,
+  SOL_SHARE_SHORTCUTS,
   STRATEGIES,
   TOKEN_PCT_SHORTCUTS,
   presetDetails,
   presetLabel,
+  ratioLabel,
   validatePreset,
   type Preset,
   type Side,
@@ -72,11 +74,18 @@ const TEMPLATE = `
       <div class="side full" role="group" aria-label="Deposit side">
         <button class="s-sol" type="button" aria-pressed="true">SOL</button>
         <button class="s-token" type="button" aria-pressed="false">Token</button>
+        <button class="s-ratio" type="button" aria-pressed="false">Ratio</button>
       </div>
       <div class="amount">
         <label><span class="f-amount-label">SOL amount</span><input class="f-amount" inputmode="decimal" autocomplete="off"></label>
-        <div class="pcts" hidden>
+        <div class="pcts token-pcts" hidden>
           ${TOKEN_PCT_SHORTCUTS.map((pct) => `<button type="button" data-pct="${pct}">${pct}%</button>`).join('')}
+        </div>
+      </div>
+      <div class="amount ratio-row" hidden>
+        <label><span class="f-share-label">SOL share %</span><input class="f-share" inputmode="numeric" autocomplete="off"></label>
+        <div class="pcts share-pcts">
+          ${SOL_SHARE_SHORTCUTS.map((share) => `<button type="button" data-share="${share}">${ratioLabel(share)}</button>`).join('')}
         </div>
       </div>
       <label>Strategy<select class="f-strategy"></select></label>
@@ -87,6 +96,7 @@ const TEMPLATE = `
         </select>
       </label>
       <label><span class="f-value-label">Min %</span><input class="f-value" inputmode="decimal" autocomplete="off"></label>
+      <label class="max-row" hidden>Max %<input class="f-max" inputmode="decimal" autocomplete="off"></label>
       <label class="check autofill-row"><input class="f-autofill" type="checkbox">Keep Auto-Fill on (off = single-sided SOL)</label>
       <p class="error-text" role="alert" hidden></p>
       <div class="actions">
@@ -127,11 +137,19 @@ export class PresetBar {
     this.modeField.addEventListener('change', () => this.syncModeLabel());
     this.get('.s-sol').addEventListener('click', () => this.switchSide('sol'));
     this.get('.s-token').addEventListener('click', () => this.switchSide('token'));
-    for (const button of this.root.querySelectorAll<HTMLButtonElement>('.pcts button')) {
+    this.get('.s-ratio').addEventListener('click', () => this.switchSide('ratio'));
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>('.token-pcts button')) {
       button.addEventListener('click', () => {
         this.amountField.value = button.dataset.pct!;
       });
     }
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>('.share-pcts button')) {
+      button.addEventListener('click', () => {
+        this.shareField.value = button.dataset.share!;
+        this.syncShareLabel();
+      });
+    }
+    this.shareField.addEventListener('input', () => this.syncShareLabel());
   }
 
   private get<T extends HTMLElement>(selector: string): T {
@@ -143,6 +161,8 @@ export class PresetBar {
   private get strategyField() { return this.get<HTMLSelectElement>('.f-strategy'); }
   private get modeField() { return this.get<HTMLSelectElement>('.f-mode'); }
   private get valueField() { return this.get<HTMLInputElement>('.f-value'); }
+  private get maxField() { return this.get<HTMLInputElement>('.f-max'); }
+  private get shareField() { return this.get<HTMLInputElement>('.f-share'); }
   private get autoFillField() { return this.get<HTMLInputElement>('.f-autofill'); }
 
   setPresets(presets: Preset[]): void {
@@ -200,12 +220,12 @@ export class PresetBar {
   private openEditor(preset: Preset | null): void {
     this.editingId = preset?.id ?? null;
     this.nameField.value = preset?.name ?? '';
-    this.amountField.value = !preset
-      ? ''
-      : String(preset.side === 'token' ? preset.tokenPct : preset.sol);
+    this.amountField.value = !preset ? '' : String(this.amountValue(preset));
+    this.shareField.value = preset?.side === 'ratio' ? String(preset.solPct) : '';
     this.strategyField.value = preset?.strategy ?? 'Bid Ask';
     this.modeField.value = preset?.range.mode === 'bins' ? 'bins' : 'percent';
     this.valueField.value = !preset ? '' : String(this.rangeValue(preset));
+    this.maxField.value = preset?.range.mode === 'minMax' ? String(preset.range.maxPct) : '';
     this.autoFillField.checked = preset?.autoFill ?? false;
     this.showEditorError('');
     this.setSide(preset?.side ?? 'sol');
@@ -219,8 +239,13 @@ export class PresetBar {
     this.get('.editor').hidden = true;
   }
 
+  private amountValue(preset: Preset): number {
+    if (preset.side === 'token') return preset.tokenPct;
+    return preset.side === 'ratio' ? preset.totalSol : preset.sol;
+  }
+
   private rangeValue({ range }: Preset): number {
-    if (range.mode === 'percent') return range.minPct;
+    if (range.mode === 'percent' || range.mode === 'minMax') return range.minPct;
     return range.mode === 'maxPercent' ? range.maxPct : range.bins;
   }
 
@@ -233,6 +258,7 @@ export class PresetBar {
     if (side === this.side) return;
     this.amountField.value = '';
     if (this.modeField.value === 'percent') this.valueField.value = '';
+    this.maxField.value = '';
     this.showEditorError('');
     this.setSide(side);
   }
@@ -240,18 +266,35 @@ export class PresetBar {
   private setSide(side: Side): void {
     this.side = side;
     const isToken = side === 'token';
-    this.get('.s-sol').setAttribute('aria-pressed', String(!isToken));
+    const isRatio = side === 'ratio';
+    this.get('.s-sol').setAttribute('aria-pressed', String(side === 'sol'));
     this.get('.s-token').setAttribute('aria-pressed', String(isToken));
-    this.get('.f-amount-label').textContent = isToken ? '% of token balance' : 'SOL amount';
-    this.get('.pcts').hidden = !isToken;
-    this.get('.autofill-row').hidden = isToken;
-    this.modeField.options[0]!.text = this.percentLabel;
+    this.get('.s-ratio').setAttribute('aria-pressed', String(isRatio));
+    this.get('.f-amount-label').textContent = isToken
+      ? '% of token balance'
+      : isRatio
+        ? 'Total position (SOL)'
+        : 'SOL amount';
+    this.get('.token-pcts').hidden = !isToken;
+    this.get('.ratio-row').hidden = !isRatio;
+    this.get('.autofill-row').hidden = side !== 'sol';
+    this.modeField.options[0]!.text = isRatio ? 'Min % and Max %' : this.percentLabel;
     this.syncModeLabel();
+    this.syncShareLabel();
   }
 
   private syncModeLabel(): void {
-    this.get('.f-value-label').textContent =
-      this.modeField.value === 'percent' ? this.percentLabel : 'Total bins';
+    const usesPercent = this.modeField.value === 'percent';
+    this.get('.f-value-label').textContent = usesPercent ? this.percentLabel : 'Total bins';
+    this.get('.max-row').hidden = !(this.side === 'ratio' && usesPercent);
+  }
+
+  private syncShareLabel(): void {
+    const share = Number(this.shareField.value.trim() || Number.NaN);
+    this.get('.f-share-label').textContent =
+      Number.isInteger(share) && share >= 1 && share <= 99
+        ? `SOL share % (token ${100 - share}%)`
+        : 'SOL share %';
   }
 
   private showEditorError(message: string): void {
@@ -279,12 +322,23 @@ export class PresetBar {
             autoFill: false,
             range: usesPercent ? { mode: 'maxPercent', maxPct: value } : { mode: 'bins', bins: value },
           }
-        : {
-            ...base,
-            sol: amount,
-            autoFill: this.autoFillField.checked,
-            range: usesPercent ? { mode: 'percent', minPct: value } : { mode: 'bins', bins: value },
-          };
+        : this.side === 'ratio'
+          ? {
+              ...base,
+              side: 'ratio',
+              totalSol: amount,
+              solPct: Number(this.shareField.value.replace('%', '').trim() || Number.NaN),
+              autoFill: false,
+              range: usesPercent
+                ? { mode: 'minMax', minPct: value, maxPct: Number(this.maxField.value.trim() || Number.NaN) }
+                : { mode: 'bins', bins: value },
+            }
+          : {
+              ...base,
+              sol: amount,
+              autoFill: this.autoFillField.checked,
+              range: usesPercent ? { mode: 'percent', minPct: value } : { mode: 'bins', bins: value },
+            };
     const problem = validatePreset(preset);
     if (problem) {
       this.showEditorError(problem);
