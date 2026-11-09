@@ -1,20 +1,39 @@
 export const STRATEGIES = ['Spot', 'Curve', 'Bid Ask'] as const;
 export type Strategy = (typeof STRATEGIES)[number];
 
-export type RangeSpec =
-  | { mode: 'percent'; minPct: number }
-  | { mode: 'bins'; bins: number };
+export type Side = 'sol' | 'token';
 
-export interface Preset {
+export type BinsRange = { mode: 'bins'; bins: number };
+export type SolRange = { mode: 'percent'; minPct: number } | BinsRange;
+export type TokenRange = { mode: 'maxPercent'; maxPct: number } | BinsRange;
+
+interface PresetBase {
   id: string;
   name?: string;
-  sol: number;
   strategy: Strategy;
-  autoFill: boolean;
-  range: RangeSpec;
 }
 
+/** `side` is absent on presets saved before token-sided presets existed. */
+export interface SolPreset extends PresetBase {
+  side?: 'sol';
+  sol: number;
+  autoFill: boolean;
+  range: SolRange;
+}
+
+/** Single-sided token: the liquidity sits above the current price. */
+export interface TokenPreset extends PresetBase {
+  side: 'token';
+  tokenPct: number;
+  autoFill: false;
+  range: TokenRange;
+}
+
+export type Preset = SolPreset | TokenPreset;
+
 export const MIN_PCT_LIMIT = -99.99;
+
+export const TOKEN_PCT_SHORTCUTS = [25, 50, 100] as const;
 
 export const MAX_NAME_LENGTH = 40;
 
@@ -23,28 +42,42 @@ export function presetLabel(preset: Preset): string {
 }
 
 export function presetDetails(preset: Preset): string {
-  const range =
-    preset.range.mode === 'percent'
-      ? `${preset.range.minPct}%`
-      : `${preset.range.bins} bins`;
+  const { range } = preset;
+  const rangeText =
+    range.mode === 'percent'
+      ? `${range.minPct}%`
+      : range.mode === 'maxPercent'
+        ? `+${range.maxPct}%`
+        : `${range.bins} bins`;
+  const amount = preset.side === 'token' ? `${preset.tokenPct}% Token` : `${preset.sol} SOL`;
   const autoFill = preset.autoFill ? ' | Auto-Fill' : '';
-  return `${preset.sol} SOL | ${preset.strategy} | ${range}${autoFill}`;
+  return `${amount} | ${preset.strategy} | ${rangeText}${autoFill}`;
 }
 
 /** Returns a message for the first invalid field, or null when the preset is valid. */
 export function validatePreset(preset: Preset): string | null {
-  if (!Number.isFinite(preset.sol) || preset.sol <= 0) {
+  if (preset.side === 'token') {
+    const { tokenPct } = preset;
+    if (!Number.isFinite(tokenPct) || tokenPct <= 0 || tokenPct > 100) {
+      return 'Token % must be above 0 and at most 100.';
+    }
+  } else if (!Number.isFinite(preset.sol) || preset.sol <= 0) {
     return 'SOL amount must be greater than 0.';
   }
   if (!STRATEGIES.includes(preset.strategy)) {
     return 'Choose a strategy.';
   }
-  if (preset.range.mode === 'percent') {
-    const { minPct } = preset.range;
+  const { range } = preset;
+  if (range.mode === 'percent') {
+    const { minPct } = range;
     if (!Number.isFinite(minPct) || minPct >= 0 || minPct < MIN_PCT_LIMIT) {
       return `Min % must be between ${MIN_PCT_LIMIT} and 0, for example -74.`;
     }
-  } else if (!Number.isInteger(preset.range.bins) || preset.range.bins < 2) {
+  } else if (range.mode === 'maxPercent') {
+    if (!Number.isFinite(range.maxPct) || range.maxPct <= 0) {
+      return 'Max % must be above 0, for example 100.';
+    }
+  } else if (!Number.isInteger(range.bins) || range.bins < 2) {
     return 'Total bins must be a whole number of at least 2.';
   }
   return null;
@@ -63,11 +96,32 @@ export interface PanelState {
   strategySelected: boolean;
   autoFillOn: boolean;
   tokenAmount: number;
+  tokenBalance: number;
+}
+
+// Wide enough for a balance Meteora shortens, such as "4.94M".
+const AMOUNT_TOLERANCE = 0.01;
+
+/** False for NaN, so an empty or unreadable field never counts as a match. */
+export function amountMatches(actual: number, expected: number): boolean {
+  return Math.abs(actual - expected) <= expected * AMOUNT_TOLERANCE;
+}
+
+/** The amount to type for a share of a balance, rounded down so it can't exceed it. */
+export function tokenAmountFor(balance: number, pct: number): number {
+  return Math.floor((balance * pct) / 100 * 1e6) / 1e6;
 }
 
 /** Returns what differs between the panel and the preset, or null when they match. */
 export function findMismatch(preset: Preset, state: PanelState): string | null {
-  if (state.sol !== preset.sol) {
+  if (preset.side === 'token') {
+    if (!amountMatches(state.tokenAmount, (state.tokenBalance * preset.tokenPct) / 100)) {
+      return `The token amount is not ${preset.tokenPct}% of your balance.`;
+    }
+    if (state.sol > 0) {
+      return 'The SOL amount is filled, so this is not single-sided token. Check Auto-Fill.';
+    }
+  } else if (state.sol !== preset.sol) {
     return `The SOL amount no longer matches ${preset.sol}.`;
   }
   if (!state.strategySelected) {
@@ -77,7 +131,7 @@ export function findMismatch(preset: Preset, state: PanelState): string | null {
     return `Auto-Fill should be ${preset.autoFill ? 'on' : 'off'}.`;
   }
   // The toggle is read from a CSS class. A filled amount catches it being misread.
-  if (!preset.autoFill && state.tokenAmount > 0) {
+  if (preset.side !== 'token' && !preset.autoFill && state.tokenAmount > 0) {
     return 'The token amount is filled, so this is not single-sided SOL. Check Auto-Fill.';
   }
   return null;
@@ -87,6 +141,15 @@ export function findMismatch(preset: Preset, state: PanelState): string | null {
 export function parseNumber(text: string): number {
   const cleaned = text.replace(/[%,\s]/g, '');
   return cleaned === '' ? Number.NaN : Number(cleaned);
+}
+
+const BALANCE_SUFFIXES: Record<string, number> = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 };
+
+/** Parses a wallet balance, such as "0.27142", "1,250.5" or "4.94M". NaN if unreadable. */
+export function parseBalance(text: string): number {
+  const match = /^([\d,.]+)\s*([KMBT])?$/i.exec(text.trim());
+  if (!match?.[1]) return Number.NaN;
+  return parseNumber(match[1]) * (BALANCE_SUFFIXES[match[2]?.toUpperCase() ?? ''] ?? 1);
 }
 
 /**
@@ -121,6 +184,18 @@ export function minPctForBins(
 ): number {
   const step = 1 + binStepBps / 10_000;
   const edge = (1 + maxPct / 100) * Math.pow(step, -(bins - 1));
+  const aimed = edge * Math.pow(step, 0.25);
+  return (aimed - 1) * 100;
+}
+
+/** Max % that yields `bins` total bins from the given Min, aiming the same quarter-bin up. */
+export function maxPctForBins(
+  minPct: number,
+  bins: number,
+  binStepBps: number,
+): number {
+  const step = 1 + binStepBps / 10_000;
+  const edge = (1 + minPct / 100) * Math.pow(step, bins - 1);
   const aimed = edge * Math.pow(step, 0.25);
   return (aimed - 1) * 100;
 }

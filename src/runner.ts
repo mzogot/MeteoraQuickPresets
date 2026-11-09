@@ -10,13 +10,19 @@ import {
 import { typeAndCommit, waitFor, waitForQuiet } from './input';
 import {
   MIN_PCT_LIMIT,
+  amountMatches,
   deriveBinStepBps,
   findMismatch,
   isSolLogo,
+  maxPctForBins,
   minPctForBins,
   oneBinPct,
+  parseBalance,
   parseNumber,
+  tokenAmountFor,
   type Preset,
+  type SolPreset,
+  type TokenPreset,
 } from './presets';
 
 // Must stay above the 300 ms debounce Meteora uses to snap the range after an amount edit.
@@ -31,6 +37,26 @@ const PARTIAL_FILL_NOTE = 'The panel may be only partly filled, so check it befo
 
 const rangeNotReady = (range: RangeSnapshot) =>
   !Number.isFinite(range.minPct) || !Number.isFinite(range.maxPct);
+
+const describeRange = (now: RangeSnapshot) =>
+  `${now.minPct}% to ${now.maxPct}%, ${now.bins ?? '?'} bins`;
+
+const readTokenBalance = (current: Panel) =>
+  parseBalance(current.tokenX.balanceButton?.innerText ?? '');
+
+/** Read-only, so a token preset with nothing to deposit never touches the panel. */
+function checkTokenBalance(current: Panel): void {
+  if (current.tokenX.input.disabled) {
+    throw new PresetError('The panel is locked right now. Try again in a moment.');
+  }
+  const balance = readTokenBalance(current);
+  if (Number.isNaN(balance)) {
+    throw new PresetError(`Couldn't read your ${current.tokenX.symbol} balance. Check your wallet is connected.`);
+  }
+  if (balance <= 0) {
+    throw new PresetError(`This wallet has no ${current.tokenX.symbol} to deposit.`);
+  }
+}
 
 function checkPool(panel: Panel): void {
   if (panel.tokenY.symbol !== 'SOL') {
@@ -78,17 +104,22 @@ export async function applyPreset(
   const loaded = await waitFor(() => !rangeNotReady(range()), LOAD_TIMEOUT_MS, signal);
   if (!loaded) throw new PresetError('The price range has not loaded yet.');
   checkPool(panel());
+  if (preset.side === 'token') checkTokenBalance(panel());
 
   // Everything above only reads the panel. From here on, a failure can leave it part-filled.
   try {
     await setAutoFill(preset.autoFill, panel, signal, onStep);
-    await setAmounts(preset, panel, settle, signal, onStep);
+    if (preset.side === 'token') await setTokenAmount(preset, panel, settle, signal, onStep);
+    else await setAmounts(preset, panel, settle, signal, onStep);
 
     onStep(`Selecting ${preset.strategy}…`);
     await setStrategy(preset, panel, signal);
 
     onStep('Setting the price range…');
-    const summary = await setRange(preset, panel, range, form, settle, signal);
+    const summary =
+      preset.side === 'token'
+        ? await setTokenRange(preset, panel, range, settle, signal)
+        : await setRange(preset, panel, range, settle, signal);
     verifyPanel(preset, panel());
     return summary;
   } catch (error) {
@@ -105,6 +136,7 @@ function verifyPanel(preset: Preset, current: Panel): void {
     strategySelected: isStrategySelected(current, preset.strategy),
     autoFillOn: isAutoFillOn(current),
     tokenAmount: parseNumber(current.tokenX.input.value),
+    tokenBalance: readTokenBalance(current),
   });
   if (mismatch) throw new PresetError(mismatch);
 }
@@ -126,8 +158,44 @@ async function setAutoFill(
   if (!changed) throw new PresetError('Auto-Fill did not change.');
 }
 
+async function setTokenAmount(
+  preset: TokenPreset,
+  panel: () => Panel,
+  settle: () => Promise<void>,
+  signal: AbortSignal,
+  onStep: (message: string) => void,
+): Promise<void> {
+  const { tokenPct } = preset;
+  onStep(`Entering ${tokenPct}% of your ${panel().tokenX.symbol}…`);
+
+  // With Auto-Fill off, two non-zero amounts make Meteora reset the range.
+  const { tokenY } = panel();
+  if (!tokenY.input.disabled && parseNumber(tokenY.input.value) > 0) {
+    await typeAndCommit(tokenY.input, '', signal);
+  }
+
+  const balance = readTokenBalance(panel());
+  const tokenInput = () => panel().tokenX.input;
+  const applied = () =>
+    amountMatches(parseNumber(tokenInput().value), (balance * tokenPct) / 100);
+  if (!applied()) {
+    // Meteora's own controls know the unrounded balance, so prefer them to typing.
+    const { percentButtons, balanceButton } = panel().tokenX;
+    const shortcut =
+      percentButtons.get(`${tokenPct}%`) ?? (tokenPct === 100 ? balanceButton : null);
+    shortcut?.click();
+    if (!shortcut || !(await waitFor(applied, STATE_TIMEOUT_MS, signal))) {
+      await typeAndCommit(tokenInput(), String(tokenAmountFor(balance, tokenPct)), signal);
+      if (!(await waitFor(applied, STATE_TIMEOUT_MS, signal))) {
+        throw new PresetError('The token amount did not apply.');
+      }
+    }
+  }
+  await settle();
+}
+
 async function setAmounts(
-  preset: Preset,
+  preset: SolPreset,
   panel: () => Panel,
   settle: () => Promise<void>,
   signal: AbortSignal,
@@ -170,11 +238,61 @@ async function setStrategy(
   if (!selected) throw new PresetError(`${preset.strategy} did not select.`);
 }
 
-async function setRange(
-  preset: Preset,
+/** Token-only liquidity sits above the price, so Min stays at it and Max is what varies. */
+async function setTokenRange(
+  preset: TokenPreset,
   panel: () => Panel,
   range: () => RangeSnapshot,
-  form: HTMLFormElement,
+  settle: () => Promise<void>,
+  signal: AbortSignal,
+): Promise<string> {
+  const start = range();
+  const binStep = deriveBinStepBps(start.minPct, start.maxPct, start.bins);
+  const spec = preset.range;
+  if (spec.mode === 'bins' && binStep === null) {
+    throw new PresetError("Couldn't work out this pool's bin step from the panel.");
+  }
+
+  const toleranceAt = (pct: number) =>
+    binStep === null ? UNKNOWN_BIN_TOLERANCE_PCT : oneBinPct(pct, binStep) + ROUNDING_TOLERANCE_PCT;
+
+  let target = spec.mode === 'bins' ? maxPctForBins(0, spec.bins, binStep!) : spec.maxPct;
+
+  for (let attempt = 1; ; attempt++) {
+    // Max goes first: on a SOL-side range Max is about 0, so Min can't move up to it yet.
+    await typeAndCommit(panel().maxInput, target.toFixed(2), signal);
+    await settle();
+    if (Math.abs(range().minPct) > toleranceAt(0)) {
+      await typeAndCommit(panel().minInput, '0', signal);
+      await settle();
+    }
+
+    const now = range();
+    if (Math.abs(now.minPct) > toleranceAt(0)) {
+      throw new PresetError(`Min should be at the current price but got ${describeRange(now)}.`);
+    }
+    if (spec.mode === 'bins') {
+      if (now.bins === spec.bins) return `Ready: ${describeRange(now)}. Review, then create.`;
+      if (attempt >= MAX_RANGE_ATTEMPTS || now.bins === null) {
+        throw new PresetError(`Wanted ${spec.bins} bins but got ${describeRange(now)}.`);
+      }
+      target -= (now.bins - spec.bins) * oneBinPct(target, binStep!);
+      continue;
+    }
+
+    if (Math.abs(now.maxPct - target) <= toleranceAt(target)) {
+      return `Ready: ${describeRange(now)}. Review, then create.`;
+    }
+    if (attempt >= MAX_RANGE_ATTEMPTS) {
+      throw new PresetError(`Wanted Max ${target}% but got ${describeRange(now)}.`);
+    }
+  }
+}
+
+async function setRange(
+  preset: SolPreset,
+  panel: () => Panel,
+  range: () => RangeSnapshot,
   settle: () => Promise<void>,
   signal: AbortSignal,
 ): Promise<string> {
@@ -183,9 +301,6 @@ async function setRange(
   if (preset.range.mode === 'bins' && binStep === null) {
     throw new PresetError("Couldn't work out this pool's bin step from the panel.");
   }
-
-  const describe = (now: RangeSnapshot) =>
-    `${now.minPct}% to ${now.maxPct}%, ${now.bins ?? '?'} bins`;
 
   let target =
     preset.range.mode === 'percent'
@@ -206,9 +321,9 @@ async function setRange(
 
     const now = range();
     if (preset.range.mode === 'bins') {
-      if (now.bins === preset.range.bins) return `Ready: ${describe(now)}. Review, then create.`;
+      if (now.bins === preset.range.bins) return `Ready: ${describeRange(now)}. Review, then create.`;
       if (attempt >= MAX_RANGE_ATTEMPTS || now.bins === null) {
-        throw new PresetError(`Wanted ${preset.range.bins} bins but got ${describe(now)}.`);
+        throw new PresetError(`Wanted ${preset.range.bins} bins but got ${describeRange(now)}.`);
       }
       target += (now.bins - preset.range.bins) * oneBinPct(target, binStep!);
       continue;
@@ -219,10 +334,10 @@ async function setRange(
         ? UNKNOWN_BIN_TOLERANCE_PCT
         : oneBinPct(target, binStep) + ROUNDING_TOLERANCE_PCT;
     if (Math.abs(now.minPct - target) <= tolerance) {
-      return `Ready: ${describe(now)}. Review, then create.`;
+      return `Ready: ${describeRange(now)}. Review, then create.`;
     }
     if (attempt >= MAX_RANGE_ATTEMPTS) {
-      throw new PresetError(`Wanted Min ${target}% but got ${describe(now)}.`);
+      throw new PresetError(`Wanted Min ${target}% but got ${describeRange(now)}.`);
     }
   }
 }

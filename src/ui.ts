@@ -1,10 +1,12 @@
 import {
   MAX_NAME_LENGTH,
   STRATEGIES,
+  TOKEN_PCT_SHORTCUTS,
   presetDetails,
   presetLabel,
   validatePreset,
   type Preset,
+  type Side,
   type Strategy,
 } from './presets';
 
@@ -40,6 +42,13 @@ const CSS = `
   label { display: flex; flex-direction: column; gap: 3px; color: #a3a3b5; }
   input, select { width: 100%; min-height: 30px; padding: 5px 7px; color: #f1f1f4; background: #101018; border: 1px solid #383848; border-radius: 6px; }
   .full { grid-column: 1 / -1; }
+  .side { display: flex; gap: 2px; padding: 2px; background: #101018; border: 1px solid #383848; border-radius: 6px; }
+  .side button { flex: 1; padding: 5px; border-radius: 5px; color: #a3a3b5; }
+  .side button[aria-pressed="true"] { background: #262633; color: #f1f1f4; font-weight: 600; }
+  .amount { display: flex; flex-direction: column; gap: 4px; }
+  .pcts { display: flex; gap: 4px; }
+  .pcts button { flex: 1; padding: 3px 0; border-radius: 5px; background: #262633; color: #a3a3b5; }
+  .pcts button:hover { color: #f1f1f4; }
   .check { flex-direction: row; align-items: center; gap: 6px; grid-column: 1 / -1; color: #f1f1f4; }
   .check input { width: 14px; min-height: 14px; }
   .error-text { grid-column: 1 / -1; margin: 0; color: #ff8585; }
@@ -60,7 +69,16 @@ const TEMPLATE = `
     <p class="status" role="status" hidden></p>
     <div class="editor" hidden>
       <label class="full">Name (optional)<input class="f-name" maxlength="${MAX_NAME_LENGTH}" autocomplete="off"></label>
-      <label>SOL amount<input class="f-sol" inputmode="decimal" autocomplete="off"></label>
+      <div class="side full" role="group" aria-label="Deposit side">
+        <button class="s-sol" type="button" aria-pressed="true">SOL</button>
+        <button class="s-token" type="button" aria-pressed="false">Token</button>
+      </div>
+      <div class="amount">
+        <label><span class="f-amount-label">SOL amount</span><input class="f-amount" inputmode="decimal" autocomplete="off"></label>
+        <div class="pcts" hidden>
+          ${TOKEN_PCT_SHORTCUTS.map((pct) => `<button type="button" data-pct="${pct}">${pct}%</button>`).join('')}
+        </div>
+      </div>
       <label>Strategy<select class="f-strategy"></select></label>
       <label>Range type
         <select class="f-mode">
@@ -69,7 +87,7 @@ const TEMPLATE = `
         </select>
       </label>
       <label><span class="f-value-label">Min %</span><input class="f-value" inputmode="decimal" autocomplete="off"></label>
-      <label class="check"><input class="f-autofill" type="checkbox">Keep Auto-Fill on (off = single-sided SOL)</label>
+      <label class="check autofill-row"><input class="f-autofill" type="checkbox">Keep Auto-Fill on (off = single-sided SOL)</label>
       <p class="error-text" role="alert" hidden></p>
       <div class="actions">
         <button class="save" type="button">Save</button>
@@ -86,6 +104,7 @@ export class PresetBar {
   private presets: Preset[] = [];
   private busy = false;
   private editingId: string | null = null;
+  private side: Side = 'sol';
 
   constructor(private readonly handlers: BarHandlers) {
     this.root.innerHTML = TEMPLATE;
@@ -106,6 +125,13 @@ export class PresetBar {
       this.closeEditor();
     });
     this.modeField.addEventListener('change', () => this.syncModeLabel());
+    this.get('.s-sol').addEventListener('click', () => this.switchSide('sol'));
+    this.get('.s-token').addEventListener('click', () => this.switchSide('token'));
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>('.pcts button')) {
+      button.addEventListener('click', () => {
+        this.amountField.value = button.dataset.pct!;
+      });
+    }
   }
 
   private get<T extends HTMLElement>(selector: string): T {
@@ -113,7 +139,7 @@ export class PresetBar {
   }
 
   private get nameField() { return this.get<HTMLInputElement>('.f-name'); }
-  private get solField() { return this.get<HTMLInputElement>('.f-sol'); }
+  private get amountField() { return this.get<HTMLInputElement>('.f-amount'); }
   private get strategyField() { return this.get<HTMLSelectElement>('.f-strategy'); }
   private get modeField() { return this.get<HTMLSelectElement>('.f-mode'); }
   private get valueField() { return this.get<HTMLInputElement>('.f-value'); }
@@ -174,15 +200,15 @@ export class PresetBar {
   private openEditor(preset: Preset | null): void {
     this.editingId = preset?.id ?? null;
     this.nameField.value = preset?.name ?? '';
-    this.solField.value = preset ? String(preset.sol) : '';
-    this.strategyField.value = preset?.strategy ?? 'Bid Ask';
-    this.modeField.value = preset?.range.mode ?? 'percent';
-    this.valueField.value = !preset
+    this.amountField.value = !preset
       ? ''
-      : String(preset.range.mode === 'percent' ? preset.range.minPct : preset.range.bins);
+      : String(preset.side === 'token' ? preset.tokenPct : preset.sol);
+    this.strategyField.value = preset?.strategy ?? 'Bid Ask';
+    this.modeField.value = preset?.range.mode === 'bins' ? 'bins' : 'percent';
+    this.valueField.value = !preset ? '' : String(this.rangeValue(preset));
     this.autoFillField.checked = preset?.autoFill ?? false;
     this.showEditorError('');
-    this.syncModeLabel();
+    this.setSide(preset?.side ?? 'sol');
     this.get('.delete').hidden = preset === null;
     this.get('.editor').hidden = false;
     this.nameField.focus();
@@ -193,9 +219,39 @@ export class PresetBar {
     this.get('.editor').hidden = true;
   }
 
+  private rangeValue({ range }: Preset): number {
+    if (range.mode === 'percent') return range.minPct;
+    return range.mode === 'maxPercent' ? range.maxPct : range.bins;
+  }
+
+  private get percentLabel(): string {
+    return this.side === 'token' ? 'Max %' : 'Min %';
+  }
+
+  /** A typed amount or percentage means something different on the other side. */
+  private switchSide(side: Side): void {
+    if (side === this.side) return;
+    this.amountField.value = '';
+    if (this.modeField.value === 'percent') this.valueField.value = '';
+    this.showEditorError('');
+    this.setSide(side);
+  }
+
+  private setSide(side: Side): void {
+    this.side = side;
+    const isToken = side === 'token';
+    this.get('.s-sol').setAttribute('aria-pressed', String(!isToken));
+    this.get('.s-token').setAttribute('aria-pressed', String(isToken));
+    this.get('.f-amount-label').textContent = isToken ? '% of token balance' : 'SOL amount';
+    this.get('.pcts').hidden = !isToken;
+    this.get('.autofill-row').hidden = isToken;
+    this.modeField.options[0]!.text = this.percentLabel;
+    this.syncModeLabel();
+  }
+
   private syncModeLabel(): void {
     this.get('.f-value-label').textContent =
-      this.modeField.value === 'percent' ? 'Min %' : 'Total bins';
+      this.modeField.value === 'percent' ? this.percentLabel : 'Total bins';
   }
 
   private showEditorError(message: string): void {
@@ -207,17 +263,28 @@ export class PresetBar {
   private save(): void {
     const value = Number(this.valueField.value.trim() || Number.NaN);
     const name = this.nameField.value.trim();
-    const preset: Preset = {
+    const amount = Number(this.amountField.value.replace('%', '').trim() || Number.NaN);
+    const usesPercent = this.modeField.value === 'percent';
+    const base = {
       id: this.editingId ?? crypto.randomUUID(),
       ...(name ? { name } : {}),
-      sol: Number(this.solField.value.trim() || Number.NaN),
       strategy: this.strategyField.value as Strategy,
-      autoFill: this.autoFillField.checked,
-      range:
-        this.modeField.value === 'percent'
-          ? { mode: 'percent', minPct: value }
-          : { mode: 'bins', bins: value },
     };
+    const preset: Preset =
+      this.side === 'token'
+        ? {
+            ...base,
+            side: 'token',
+            tokenPct: amount,
+            autoFill: false,
+            range: usesPercent ? { mode: 'maxPercent', maxPct: value } : { mode: 'bins', bins: value },
+          }
+        : {
+            ...base,
+            sol: amount,
+            autoFill: this.autoFillField.checked,
+            range: usesPercent ? { mode: 'percent', minPct: value } : { mode: 'bins', bins: value },
+          };
     const problem = validatePreset(preset);
     if (problem) {
       this.showEditorError(problem);

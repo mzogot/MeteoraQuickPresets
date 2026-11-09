@@ -9,6 +9,10 @@ export interface TokenField {
   symbol: string;
   logoUrl: string;
   input: HTMLInputElement;
+  /** Null when the row isn't showing, such as with no wallet connected. */
+  balanceButton: HTMLButtonElement | null;
+  /** Meteora's shortcuts by label, such as "25%". Users can edit these. */
+  percentButtons: Map<string, HTMLButtonElement>;
 }
 
 export interface Panel {
@@ -53,12 +57,32 @@ function requireElement<T extends Element>(element: T | null | undefined, name: 
   return element;
 }
 
+/** The nearest balance row going up from the field, which is always the field's own. */
+function findBalanceActions(wrapper: Element): Element | null {
+  for (let node = wrapper.parentElement; node; node = node.parentElement) {
+    const actions = node.querySelector(component('TokenBalanceActions'));
+    if (actions) return actions;
+  }
+  return null;
+}
+
 function readTokenField(form: HTMLFormElement, side: 'x' | 'y'): TokenField {
   const wrapper = requireElement(
     form.querySelector(`[data-tour="amount-input-${side}"]`),
     `the token ${side.toUpperCase()} field`,
   );
+
+  let balanceButton: HTMLButtonElement | null = null;
+  const percentButtons = new Map<string, HTMLButtonElement>();
+  for (const button of findBalanceActions(wrapper)?.querySelectorAll('button') ?? []) {
+    const label = button.innerText.trim();
+    if (label.endsWith('%')) percentButtons.set(label, button);
+    else if (label) balanceButton ??= button;
+  }
+
   return {
+    balanceButton,
+    percentButtons,
     symbol: wrapper.previousElementSibling?.textContent?.trim() ?? '',
     logoUrl:
       wrapper.parentElement?.querySelector<HTMLImageElement>(`${component('TokenLogo')} img`)?.src ?? '',

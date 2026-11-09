@@ -2,6 +2,13 @@
 
 Notable changes to Meteora Quick Presets. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-09
+
+### Added
+
+- Token-sided presets. A new SOL / Token switcher in the preset editor lets you deposit a percentage of your token balance instead of a SOL amount, using the 25%, 50% and 100% shortcuts or any value you type.
+- Token-sided presets set the range above the current price, by Max % or by total bins.
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

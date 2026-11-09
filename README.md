@@ -41,10 +41,11 @@ Each preset stores:
 | Setting | Options |
 | --- | --- |
 | **Name** | Optional, up to 40 characters. Without one, the button shows the preset's settings. |
-| **SOL amount** | Any amount above 0. |
+| **Side** | SOL, or Token for a single-sided token position. |
+| **Amount** | SOL side: any amount above 0. Token side: a percentage of your token balance, from the 25%, 50% and 100% shortcuts or any value you type. |
 | **Strategy** | Spot, Curve or Bid Ask. |
-| **Range** | Min % (between -99.99 and 0), or total bins (2 or more). |
-| **Auto-Fill** | Off for a single-sided SOL position, on to let Meteora balance both tokens. |
+| **Range** | SOL side: Min % (between -99.99 and 0) or total bins (2 or more). Token side: Max % (above 0) or total bins, starting at the current price. |
+| **Auto-Fill** | SOL side only. Off for a single-sided SOL position, on to let Meteora balance both tokens. Always off on the Token side. |
 
 The bar shows each step as it runs and tells you what stopped it if something goes wrong. If you click or type in the panel, or the page changes, a running preset stops straight away. Presets stay in sync across open Meteora tabs.
 
@@ -71,7 +72,7 @@ A preset only runs when:
 - The pool is paired with real SOL as the second token. Tokens that are only named SOL are refused.
 - The panel shows the price as SOL/TOKEN. If it's flipped, click the price to switch it back.
 
-Before showing **Ready**, the extension reads the panel back and checks the SOL amount, strategy, Auto-Fill and price range. If a preset stops early, the bar tells you the panel may be only partly filled.
+Before showing **Ready**, the extension reads the panel back and checks the amount, strategy, Auto-Fill and price range. If a preset stops early, the bar tells you the panel may be only partly filled.
 
 The bar reads Meteora's page directly, so a Meteora redesign can break it. When it can't find what it needs, it stops and says so. Always look over the panel and your wallet's confirmation before you create the position.
 
