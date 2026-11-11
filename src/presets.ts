@@ -116,13 +116,28 @@ export function validatePreset(preset: Preset): string | null {
   return null;
 }
 
-const SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+const POOL_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+/** The pool address from a pool page's path, such as `/dlmm/<address>`. */
+export function poolAddressFromPath(pathname: string): string | null {
+  const segments = pathname.split('/').filter(Boolean);
+  const at = segments.indexOf('dlmm');
+  const address = at < 0 ? undefined : segments[at + 1];
+  return address && POOL_ADDRESS.test(address) ? address : null;
+}
 
 /**
- * Token symbols are free text, and fake "SOL" tokens exist. Meteora loads real
- * SOL's logo from a path containing its mint; fakes use their own logo.
+ * The second token's mint from Meteora's pool API reply. Null unless the reply
+ * is for this pool, so an unexpected reply never counts as SOL.
  */
-export const isSolLogo = (logoUrl: string) => logoUrl.includes(`/${SOL_MINT}/`);
+export function quoteMintFromPool(data: unknown, poolAddress: string): string | null {
+  const pool = data as { address?: unknown; token_y?: { address?: unknown } } | null;
+  if (pool?.address !== poolAddress) return null;
+  const mint = pool.token_y?.address;
+  return typeof mint === 'string' && mint ? mint : null;
+}
 
 export interface PanelState {
   sol: number;

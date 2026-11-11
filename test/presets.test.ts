@@ -4,14 +4,15 @@ import {
   deriveBinStepBps,
   exceedsBalance,
   findMismatch,
-  isSolLogo,
   maxPctForBins,
   minPctForBins,
   parseBalance,
   parseNumber,
   parsePrice,
+  poolAddressFromPath,
   presetDetails,
   presetLabel,
+  quoteMintFromPool,
   ratioAmounts,
   ratioRangeForBins,
   splitBins,
@@ -68,15 +69,41 @@ test('a name replaces the label but not the details', () => {
   assert.equal(presetDetails(named), '2 SOL | Bid Ask | -74%');
 });
 
-test('recognises real SOL by the logo URLs seen on live pools', () => {
-  assert.ok(
-    isSolLogo(
-      'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
-    ),
+const POOL = '5D6YvjigZaStjPhvehtXj7Xx8DNRGtJAuwgMv1br8k7M';
+const SOL = 'So11111111111111111111111111111111111111112';
+
+test('reads the pool address from a pool page path', () => {
+  assert.equal(poolAddressFromPath(`/dlmm/${POOL}`), POOL);
+  assert.equal(poolAddressFromPath(`/dlmm/${POOL}/`), POOL);
+  assert.equal(poolAddressFromPath(`/en/dlmm/${POOL}/positions`), POOL);
+});
+
+test('finds no pool address on other paths', () => {
+  assert.equal(poolAddressFromPath('/'), null);
+  assert.equal(poolAddressFromPath('/dlmm'), null);
+  assert.equal(poolAddressFromPath('/dlmm/create'), null);
+  assert.equal(poolAddressFromPath(`/portfolio/${POOL}`), null);
+  assert.equal(poolAddressFromPath(`/dlmm/${POOL}0`), null);
+});
+
+test("reads the second token's mint from Meteora's pool reply", () => {
+  const reply = { address: POOL, token_x: { address: 'Bv1a7c' }, token_y: { address: SOL, symbol: 'SOL' } };
+  assert.equal(quoteMintFromPool(reply, POOL), SOL);
+  assert.equal(
+    quoteMintFromPool({ ...reply, token_y: { address: 'FakeMint', symbol: 'SOL' } }, POOL),
+    'FakeMint',
   );
-  assert.equal(isSolLogo('https://file.dexlab.space/file/000fd806c78a47a29a0d581b4d10fdf7'), false);
-  assert.equal(isSolLogo('https://gateway.pinata.cloud/ipfs/bafybeihijocwf7ykrywjzwdubxx'), false);
-  assert.equal(isSolLogo(''), false);
+});
+
+test('never reads a mint from a reply it does not recognise', () => {
+  const reply = { address: POOL, token_y: { address: SOL } };
+  assert.equal(quoteMintFromPool(reply, 'AnotherPool'), null);
+  assert.equal(quoteMintFromPool({ token_y: { address: SOL } }, POOL), null);
+  assert.equal(quoteMintFromPool({ address: POOL }, POOL), null);
+  assert.equal(quoteMintFromPool({ address: POOL, token_y: { address: 42 } }, POOL), null);
+  assert.equal(quoteMintFromPool({ address: POOL, token_y: { address: '' } }, POOL), null);
+  assert.equal(quoteMintFromPool(null, POOL), null);
+  assert.equal(quoteMintFromPool('not json', POOL), null);
 });
 
 test('finds nothing wrong when the panel matches the preset', () => {

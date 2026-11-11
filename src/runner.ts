@@ -10,13 +10,13 @@ import {
   type TokenField,
 } from './dom';
 import { typeAndCommit, waitFor, waitForQuiet } from './input';
+import { confirmRealSol } from './pool';
 import {
   MIN_PCT_LIMIT,
   amountMatches,
   deriveBinStepBps,
   exceedsBalance,
   findMismatch,
-  isSolLogo,
   maxPctForBins,
   minPctForBins,
   oneBinPct,
@@ -107,9 +107,6 @@ function checkPool(panel: Panel): void {
       `Presets need a TOKEN/SOL pool. This one is ${panel.tokenX.symbol}/${panel.tokenY.symbol}.`,
     );
   }
-  if (!isSolLogo(panel.tokenY.logoUrl)) {
-    throw new PresetError("Couldn't confirm this pool uses real SOL. Its token may only be named SOL.");
-  }
   const expected = `${panel.tokenY.symbol}/${panel.tokenX.symbol}`;
   if (panel.pairLabel !== expected) {
     throw new PresetError(
@@ -147,6 +144,7 @@ export async function applyPreset(
   const loaded = await waitFor(() => !rangeNotReady(range()), LOAD_TIMEOUT_MS, signal);
   if (!loaded) throw new PresetError('The price range has not loaded yet.');
   checkPool(panel());
+  await confirmRealSol(signal);
   if (preset.side === 'token') checkTokenBalance(panel());
   const ratioDeposit = preset.side === 'ratio' ? planRatioDeposit(preset, panel()) : null;
 

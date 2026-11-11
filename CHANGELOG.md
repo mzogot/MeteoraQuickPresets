@@ -2,6 +2,17 @@
 
 Notable changes to Meteora Quick Presets. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-11-12
+
+### Fixed
+
+- Presets work again. Meteora changed where it loads token logos from, so every pool was refused with "Couldn't confirm this pool uses real SOL".
+
+### Changed
+
+- The real-SOL check now asks Meteora's pool API for the token's mint address instead of reading its logo, which a fake token could copy. This is the extension's first and only network request. It sends the pool's address, and nothing about you, your wallet or your presets.
+- If Meteora can't be reached to check the pool, the preset doesn't run and the bar says so.
+
 ## [0.4.0] - 2026-11-09
 
 ### Added

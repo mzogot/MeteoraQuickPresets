@@ -7,7 +7,6 @@ const component = (name: string) => `[data-sentry-component="${name}"]`;
 
 export interface TokenField {
   symbol: string;
-  logoUrl: string;
   input: HTMLInputElement;
   /** Null when the row isn't showing, such as with no wallet connected. */
   balanceButton: HTMLButtonElement | null;
@@ -84,8 +83,6 @@ function readTokenField(form: HTMLFormElement, side: 'x' | 'y'): TokenField {
     balanceButton,
     percentButtons,
     symbol: wrapper.previousElementSibling?.textContent?.trim() ?? '',
-    logoUrl:
-      wrapper.parentElement?.querySelector<HTMLImageElement>(`${component('TokenLogo')} img`)?.src ?? '',
     input: requireElement(wrapper.querySelector('input'), 'the amount input'),
   };
 }

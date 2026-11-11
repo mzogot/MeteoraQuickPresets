@@ -14,12 +14,14 @@ Please report anything that makes it possible for the extension to:
 
 - Submit the Create Position form or trigger a wallet signature.
 - Read wallet keys, seed phrases or balances.
-- Send data anywhere, or load code from a remote source.
+- Send data anywhere other than the pool check described below, or load code from a remote source.
 - Run on any site other than `https://app.meteora.ag`, `https://www.meteora.ag`, `https://meteora.ag` or `https://edge.meteora.ag`.
 - Report a preset as ready when the panel holds a different amount, strategy, Auto-Fill setting or price range.
 
-The real-SOL check reads the token logo Meteora shows, because the extension makes no network requests. A fake
-token could pass it by using SOL's exact logo address, so always check the pool before you deposit.
+The real-SOL check is the extension's only network request. When you run a preset, it asks Meteora's pool API
+(`https://dlmm.datapi.meteora.ag/pools/<pool address>`) for the mint address of the pool's second token, and
+refuses the pool unless that is SOL's mint. The request carries the pool address from the page you're on and
+nothing else. If Meteora can't be reached, the preset doesn't run.
 
 ## Check your download
 

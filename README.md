@@ -8,7 +8,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/mzogot/MeteoraQuickPresets?label=release&color=f5a24b)](https://github.com/mzogot/MeteoraQuickPresets/releases/latest)
 ![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-black?logo=googlechrome&logoColor=white)
-![No network access](https://img.shields.io/badge/network%20access-none-black)
+![No data collected](https://img.shields.io/badge/data%20collected-none-black)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 [**⬇ Download**](https://github.com/mzogot/MeteoraQuickPresets/releases/latest) · [Install](#install) · [How to use it](#how-to-use-it) · [Privacy](#privacy-and-permissions) · [Security](#security) · [Changelog](CHANGELOG.md)
@@ -30,7 +30,7 @@ Opening a DLMM position means setting the same few fields every time: amount, Au
 - **SOL, token or both.** Deposit a fixed SOL amount, a percentage of your token balance, or both tokens at a ratio such as 50/50 or 80/20.
 - **Range by percent or by bins.** Set a Min % (Max % on the token side, both on a ratio), or ask for a total bin count and the extension works out the price from the pool's bin step.
 - **It never submits.** The extension only fills in the form. Creating the position is still your click, and your wallet still asks you to sign.
-- **No wallet access and no network access.** It has no code that talks to a wallet or a server.
+- **No wallet access and no data collection.** It has no code that talks to a wallet. Its one network request asks Meteora which tokens the pool holds.
 - **Free and open source** under the MIT license.
 
 ## Features
@@ -72,7 +72,7 @@ To update, replace the folder with the new version and click the reload icon on 
 
 A preset only runs when:
 
-- The pool is paired with real SOL as the second token. Tokens that are only named SOL are refused.
+- The pool is paired with real SOL as the second token. The extension checks the token's mint address with Meteora, so tokens that are only named SOL are refused.
 - The panel shows the price as SOL/TOKEN. If it's flipped, click the price to switch it back.
 - For a token-side preset, your connected wallet holds some of that token.
 
@@ -86,7 +86,7 @@ The bar reads Meteora's page directly, so a Meteora redesign can break it. When 
 | --- | --- |
 | **Permissions** | `storage`, to save your presets in your browser. |
 | **Runs on** | Meteora's app only: `app.meteora.ag`, `www.meteora.ag`, `meteora.ag` and `edge.meteora.ag`. |
-| **Sends data** | Nothing. There are no network requests, analytics or accounts. |
+| **Sends data** | One request to Meteora's own pool API (`dlmm.datapi.meteora.ag`) when you run a preset, to confirm the pool holds real SOL. It sends the pool's address and nothing about you, your wallet or your presets. There are no analytics or accounts. |
 | **Wallet access** | None. It never reads your keys or balances and never signs anything. |
 | **Stored data** | Your presets, in Chrome's local extension storage. Removing the extension deletes them. |
 
