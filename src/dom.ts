@@ -3,7 +3,8 @@ import { parseNumber, parsePrice, type Strategy } from './presets';
 /** A failure with a message written to be shown to the user. */
 export class PresetError extends Error {}
 
-const component = (name: string) => `[data-sentry-component="${name}"]`;
+// Meteora marks the panel's sections for its guided tour. Nothing else on the page names them.
+const tour = (name: string) => `[data-tour="${name}"]`;
 
 export interface TokenField {
   symbol: string;
@@ -33,16 +34,15 @@ export interface RangeSnapshot {
 
 const isVisible = (element: Element) => element.getClientRects().length > 0;
 
-/** The Create Position form, excluding the add-liquidity form on existing positions. */
+/**
+ * The Create Position form. The add-liquidity form on existing positions is the
+ * same component, but Meteora leaves its price range out of the tour.
+ */
 export function findCreateForm(): HTMLFormElement | null {
-  for (const amount of document.querySelectorAll(component('AmountInput'))) {
-    if (!isVisible(amount)) continue;
-    if (amount.closest(component('PositionManagementAddLiquidityComponent'))) continue;
-    const form = amount.closest('form');
-    if (
-      form?.querySelector(component('StrategySelection')) &&
-      form.querySelectorAll(component('BinPriceInput')).length >= 2
-    ) {
+  for (const range of document.querySelectorAll(tour('price-range'))) {
+    if (!isVisible(range)) continue;
+    const form = range.closest('form');
+    if (form?.querySelector(tour('amount-input-x')) && form.querySelector(tour('strategy'))) {
       return form;
     }
   }
@@ -56,24 +56,34 @@ function requireElement<T extends Element>(element: T | null | undefined, name: 
   return element;
 }
 
-/** The nearest balance row going up from the field, which is always the field's own. */
-function findBalanceActions(wrapper: Element): Element | null {
-  for (let node = wrapper.parentElement; node; node = node.parentElement) {
-    const actions = node.querySelector(component('TokenBalanceActions'));
-    if (actions) return actions;
+/** The nearest match going up from `start`, without leaving `within`. */
+function findNearby<T extends Element>(start: Element, selector: string, within: Element): T | null {
+  for (let node = start.parentElement; node; node = node.parentElement) {
+    const match = node.querySelector<T>(selector);
+    if (match || node === within) return match;
   }
   return null;
 }
 
+/** The field's own card: the largest block around it holding no other amount field. */
+function findFieldCard(wrapper: Element): Element {
+  let card = wrapper;
+  for (let node = wrapper.parentElement; node; node = node.parentElement) {
+    if (node.querySelectorAll('[data-tour^="amount-input-"]').length > 1) break;
+    card = node;
+  }
+  return card;
+}
+
 function readTokenField(form: HTMLFormElement, side: 'x' | 'y'): TokenField {
   const wrapper = requireElement(
-    form.querySelector(`[data-tour="amount-input-${side}"]`),
+    form.querySelector(tour(`amount-input-${side}`)),
     `the token ${side.toUpperCase()} field`,
   );
 
   let balanceButton: HTMLButtonElement | null = null;
   const percentButtons = new Map<string, HTMLButtonElement>();
-  for (const button of findBalanceActions(wrapper)?.querySelectorAll('button') ?? []) {
+  for (const button of findFieldCard(wrapper).querySelectorAll('button')) {
     const label = button.innerText.trim();
     if (label.endsWith('%')) percentButtons.set(label, button);
     else if (label) balanceButton ??= button;
@@ -87,16 +97,17 @@ function readTokenField(form: HTMLFormElement, side: 'x' | 'y'): TokenField {
   };
 }
 
-function findPriceInput(form: HTMLFormElement, label: string): HTMLInputElement {
-  const block = [...form.querySelectorAll(component('BinPriceInput'))].find(
-    (element) => element.querySelector('span')?.textContent?.trim() === label,
+function findSpan(within: Element, text: string): HTMLElement | undefined {
+  return [...within.querySelectorAll('span')].find(
+    (span) => span.textContent?.trim() === text,
   );
-  return requireElement(block?.querySelector('input'), `the ${label} % input`);
 }
 
-function findSpan(form: HTMLFormElement, text: string): HTMLElement | undefined {
-  return [...form.querySelectorAll('span')].find(
-    (span) => span.textContent?.trim() === text,
+function findPriceInput(range: Element, label: string): HTMLInputElement {
+  const heading = findSpan(range, label);
+  return requireElement(
+    heading && findNearby<HTMLInputElement>(heading, 'input', range),
+    `the ${label} % input`,
   );
 }
 
@@ -106,35 +117,38 @@ export function readPanel(form: HTMLFormElement): Panel {
   }
 
   const strategyButtons = new Map<string, HTMLButtonElement>();
-  for (const button of form.querySelectorAll<HTMLButtonElement>(
-    `${component('StrategySelection')} button`,
-  )) {
+  for (const button of form.querySelectorAll<HTMLButtonElement>(`${tour('strategy')} button`)) {
     // innerText, because these buttons contain <style> tags that pollute textContent.
     strategyButtons.set(button.innerText.trim(), button);
   }
 
-  const range = requireElement(form.querySelector(component('PositionPriceRange')), 'the price range');
-  const swapIcon = range.querySelector(component('SwapIcon'));
+  const range = requireElement(form.querySelector(tour('price-range')), 'the price range');
+  // The only button in the range with a pair on it, such as "SOL/TOKEN", is the one that flips it.
+  const pairButton = [...range.querySelectorAll('button')].find((button) =>
+    button.innerText.includes('/'),
+  );
+  const autoFillLabel = requireElement(findSpan(form, 'Auto-Fill'), 'the Auto-Fill label');
 
   return {
-    autoFillLabel: requireElement(findSpan(form, 'Auto-Fill'), 'the Auto-Fill label'),
+    autoFillLabel,
     autoFillToggle: requireElement(
-      form.querySelector<HTMLButtonElement>(component('Toggle')),
+      findNearby<HTMLButtonElement>(autoFillLabel, 'button', form),
       'the Auto-Fill toggle',
     ),
     tokenX: readTokenField(form, 'x'),
     tokenY: readTokenField(form, 'y'),
     strategyButtons,
-    minInput: findPriceInput(form, 'Min Price'),
-    maxInput: findPriceInput(form, 'Max Price'),
-    pairLabel: swapIcon?.closest('button')?.innerText.trim() ?? '',
+    minInput: findPriceInput(range, 'Min Price'),
+    maxInput: findPriceInput(range, 'Max Price'),
+    pairLabel: pairButton?.innerText.trim() ?? '',
   };
 }
 
 /** The pool's live price. It sits outside the Create Position form. */
 export function readPoolPrice(): { value: number; pair: string } {
-  const block = [...document.querySelectorAll(component('PoolPrice'))].find(isVisible);
-  const button = requireElement(block?.querySelector('button'), 'the current pool price');
+  // Its pair, such as "SOL/TOKEN", is the title of a label sitting directly in the button.
+  const pair = [...document.querySelectorAll('button > span[title*="/"]')].find(isVisible);
+  const button = requireElement(pair?.closest('button'), 'the current pool price');
   return {
     value: parsePrice(button.querySelector('span')?.textContent ?? ''),
     pair: button.querySelector('span[title]')?.getAttribute('title') ?? '',

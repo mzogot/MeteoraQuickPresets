@@ -2,6 +2,12 @@
 
 Notable changes to Meteora Quick Presets. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-11-20
+
+### Fixed
+
+- The preset bar is back. Meteora removed the markers the extension used to find the Create Position panel, so the bar stopped appearing on every pool.
+
 ## [0.4.1] - 2026-11-12
 
 ### Fixed
